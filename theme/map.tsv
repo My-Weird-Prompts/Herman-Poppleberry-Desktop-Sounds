@@ -1,0 +1,16 @@
+system-bootup	boot
+system-shutdown	shutdown
+system-ready	boot
+device-added	device-added
+device-removed	device-removed
+power-plug	power-plugged
+power-unplug	power-unplugged
+battery-low	battery-low
+battery-caution	battery-critical
+battery-full	battery-full
+dialog-error	error
+screen-capture	screenshot
+complete	task-complete
+complete-download	download-complete
+network-connectivity-established	network-connected
+network-connectivity-lost	network-lost

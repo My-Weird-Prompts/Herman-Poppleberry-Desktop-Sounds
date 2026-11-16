@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Herman Poppleberry event watcher: plays clips on desktop events the sound theme can't cover.
+
+Events: session start (boot clip if the machine booted < 5 min ago, else login), suspend/resume (logind
+PrepareForSleep), screen lock/unlock (org.freedesktop.ScreenSaver ActiveChanged), default mic
+mute/unmute (pactl subscribe), NetworkManager VPN up/down (nmcli monitor). Shutdown is played
+by the systemd user unit's ExecStop. No dependencies beyond dbus-monitor, pactl, nmcli, paplay.
+
+Clips dir: $HERMAN_CLIPS, else ~/.local/share/herman-poppleberry/clips.
+Disable an event: list its clip ids in $HERMAN_MUTE (comma-separated).
+"""
+import os
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+CLIPS = Path(os.environ.get("HERMAN_CLIPS", Path.home() / ".local/share/herman-poppleberry/clips"))
+MUTED = {m.strip() for m in os.environ.get("HERMAN_MUTE", "").split(",") if m.strip()}
+_last: dict[str, float] = {}
+
+
+def say(clip: str, debounce: float = 3.0) -> None:
+    now = time.monotonic()
+    if clip in MUTED or now - _last.get(clip, -1e9) < debounce:
+        return
+    _last[clip] = now
+    f = CLIPS / f"{clip}.wav"
+    if f.exists():
+        subprocess.Popen(["paplay", str(f)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def lines(cmd):
+    while True:
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            yield from p.stdout
+        except FileNotFoundError:
+            return
+        time.sleep(5)  # restart the monitor if it dies
+
+
+def watch_sleep():
+    expect = False
+    for ln in lines(["dbus-monitor", "--system",
+                     "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'"]):
+        if "member=PrepareForSleep" in ln:
+            expect = True
+        elif expect and "boolean" in ln:
+            expect = False
+            if "true" in ln:
+                say("suspend")
+            else:
+                time.sleep(2)  # let audio come back
+                say("resume")
+
+
+def watch_lock():
+    expect = False
+    for ln in lines(["dbus-monitor", "--session",
+                     "type='signal',interface='org.freedesktop.ScreenSaver',member='ActiveChanged'"]):
+        if "member=ActiveChanged" in ln:
+            expect = True
+        elif expect and "boolean" in ln:
+            expect = False
+            say("screen-locked" if "true" in ln else "screen-unlocked")
+
+
+def mic_muted():
+    r = subprocess.run(["pactl", "get-source-mute", "@DEFAULT_SOURCE@"], capture_output=True, text=True)
+    return "yes" in r.stdout if r.returncode == 0 else None
+
+
+def watch_mic():
+    state = mic_muted()
+    for ln in lines(["pactl", "subscribe"]):
+        if "on source" in ln and "change" in ln or "on server" in ln:
+            now = mic_muted()
+            if now is not None and state is not None and now != state:
+                say("mic-muted" if now else "mic-live", debounce=1.0)
+            state = now
+
+
+def watch_vpn():
+    for ln in lines(["nmcli", "monitor"]):
+        low = ln.lower()
+        if "vpn" not in low and "wireguard" not in low:
+            continue
+        if ": connected" in low or "vpn connection" in low and "activated" in low:
+            say("vpn-connected")
+        elif ": disconnected" in low or "deactivated" in low:
+            say("vpn-disconnected")
+
+
+def boot_greeting():
+    try:
+        uptime = float(Path("/proc/uptime").read_text().split()[0])
+    except OSError:
+        return
+    time.sleep(4)
+    say("boot" if uptime < 300 else "login")
+
+
+def main():
+    for fn in (watch_sleep, watch_lock, watch_mic, watch_vpn):
+        threading.Thread(target=fn, daemon=True).start()
+    boot_greeting()
+    while True:
+        time.sleep(3600)
+
+
+if __name__ == "__main__":
+    main()

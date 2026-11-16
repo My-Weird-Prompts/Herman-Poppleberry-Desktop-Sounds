@@ -1,0 +1,8 @@
+[Sound Theme]
+Name=Herman Poppleberry
+Comment=Desktop sounds in the voice of Herman Poppleberry (My Weird Prompts)
+Inherits=ocean,freedesktop
+Directories=stereo
+
+[stereo]
+OutputProfile=stereo
