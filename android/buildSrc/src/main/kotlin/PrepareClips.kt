@@ -7,7 +7,7 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 
 /**
- * Copies ../clips/*.wav (repo-root clips/, relative to android/) into generated raw resources, converting to Ogg/Opus
+ * Copies the .wav files in ../clips (repo-root clips/, relative to android/) into generated raw resources, converting to Ogg/Opus
  * when ffmpeg with libopus is on PATH (per clip; falls back to the plain WAV). Also copies
  * clips.json as raw/clips_json.json. Resource names: clip_<id with - replaced by _>.
  */
