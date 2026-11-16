@@ -11,7 +11,7 @@ The laptop has no usable Gradle setup and heavy jobs are barred there. All build
 
 ## Layout
 
-- `app/build.gradle.kts`: task `prepareClips` copies `../clips/*.wav` (repo root) into generated raw resources
+- `buildSrc/.../PrepareClips.kt` (wired in `app/build.gradle.kts`): task `prepareClips` copies `../clips/*.wav` (repo root) into generated raw resources
   `clip_<id with - as _>.ogg`, converting with `ffmpeg -c:a libopus -b:a 32k` when ffmpeg is on PATH (CI installs it),
   else the WAV is copied. It also copies `clips/clips.json` to `raw/clips_json.json`. The app reads that JSON at runtime,
   so adding a clip to `clips/` needs no code change.
