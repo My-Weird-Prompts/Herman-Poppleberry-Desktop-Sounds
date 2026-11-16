@@ -106,4 +106,4 @@ val prepareClips = tasks.register<PrepareClips>("prepareClips") {
     outDir.set(layout.buildDirectory.dir("generated/herman/res"))
 }
 
-android.sourceSets.getByName("main").res.srcDir(prepareClips.map { it.outDir })
+android.sourceSets.getByName("main").res.srcDir(prepareClips.flatMap { it.outDir })
