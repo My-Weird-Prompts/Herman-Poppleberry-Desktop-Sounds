@@ -1,0 +1,69 @@
+name: Android APK
+
+# Pushes touching android/ or clips/ build an APK artifact. A tag `android-v*` also publishes a
+# GitHub Release with the signed APK. Clips are converted to Ogg/Opus with ffmpeg in CI.
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', 'clips/**', '.github/workflows/android.yml']
+    tags: ['android-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04   # image ships an Android SDK; no setup-android step needed
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: ffmpeg (libopus) for clip conversion
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Version from tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then
+            echo "VERSION_NAME=${GITHUB_REF#refs/tags/android-v}" >> "$GITHUB_ENV"
+          fi
+          echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Decode signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+
+      - name: Rename
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/herman-announcer-${VERSION_NAME:-dev}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: android/out/*.apk
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/*.apk --title "Herman Announcer ${GITHUB_REF_NAME#android-}" --generate-notes

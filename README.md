@@ -119,6 +119,44 @@ herman-say secure-mode-on
 | `recording-started` | Recording started. |
 | `recording-stopped` | Recording stopped. |
 
+## Android: Herman Announcer
+
+Phone companion to this pack (added 2026-11-17). Package `com.myweirdprompts.herman`, source in [`android/`](android/).
+It runs a low-importance foreground service and speaks the clips on system events.
+
+**Install:** download `herman-announcer-<version>.apk` from the
+[Releases](https://github.com/My-Weird-Prompts/Herman-Poppleberry-Desktop-Sounds/releases) entry tagged `android-v*` and
+open it (allow installs from your browser or file manager). On first launch allow notifications and Bluetooth.
+
+**What triggers what** (each event can be switched off or given another clip in the app; a 3 second debounce applies per event):
+
+| Android event | clip |
+|---|---|
+| boot completed | `boot` |
+| shutdown | `shutdown` |
+| screen unlocked (or screen on with no lock) | `screen-unlocked` |
+| charger connected / disconnected | `power-plugged` / `power-unplugged` |
+| battery low (system warning, about 15%) | `battery-low` |
+| battery at or below 5%, not charging | `battery-critical` |
+| battery full while charging | `battery-full` |
+| wired or USB headset plugged / unplugged | `headset-connected` / `headset-disconnected` |
+| Bluetooth audio (A2DP) connected | `bluetooth-connected` |
+| default network available / lost | `network-connected` / `network-lost` |
+| VPN up / down | `vpn-connected` / `vpn-disconnected` |
+| ringer silent / normal | `sound-muted` / `sound-restored` |
+| airplane mode on / off | `secure-mode-on` / `secure-mode-off` |
+| Do Not Disturb on / off | `mic-muted` / `mic-live` |
+
+Herman plays on the notification stream, so the ringer's silent mode mutes him; the "Ignore silent mode" switch moves
+him to the media stream. The Soundboard tab plays any clip.
+
+**Export as notification sounds:** the button copies all clips into `Notifications/Herman Poppleberry/` and
+`Ringtones/` (MediaStore), so they appear in Settings > Sound and in per-app notification sound pickers. Re-running skips
+files already exported.
+
+Clips are not duplicated in the app source: the build copies `clips/*.wav` (converted to Ogg/Opus in CI), so a
+re-rendered clip needs only a new `android-v*` tag. Build, signing and release: [`android/README.md`](android/README.md).
+
 ## How they were made
 
 Rendered on 2026-11-17 with the My Weird Prompts Chatterbox voice-clone TTS (the podcast's production `tts_worker`
