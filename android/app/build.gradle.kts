@@ -47,6 +47,15 @@ android {
     buildFeatures { compose = true }
 }
 
+dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.core:core-ktx:1.16.0")
+}
+
 /**
  * Copies ../clips/*.wav (repo-root clips/, relative to android/) into generated raw resources, converting to Ogg/Opus
  * when ffmpeg with libopus is on PATH (per clip; falls back to the plain WAV). Also copies
@@ -98,12 +107,3 @@ val prepareClips = tasks.register<PrepareClips>("prepareClips") {
 }
 
 android.sourceSets.getByName("main").res.srcDir(prepareClips.map { it.outDir })
-
-dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
-    implementation(composeBom)
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.activity:activity-compose:1.10.1")
-    implementation("androidx.core:core-ktx:1.16.0")
-}
