@@ -5,7 +5,7 @@ name: Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     paths: ['android/**', 'clips/**', '.github/workflows/android.yml']
     tags: ['android-v*']
   workflow_dispatch:

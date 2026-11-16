@@ -43,7 +43,7 @@ gh run watch                                           # then: gh release view a
 ```
 
 The release carries `herman-announcer-<version>.apk`. Distribution is GitHub Releases only; this app is not in an
-F-Droid channel (the workflow has no F-Droid dispatch step). Pushes to `main` touching `android/` or `clips/` build an
+F-Droid channel (the workflow has no F-Droid dispatch step). Pushes to `master` touching `android/` or `clips/` build an
 APK artifact without releasing.
 
 ## Verification status
