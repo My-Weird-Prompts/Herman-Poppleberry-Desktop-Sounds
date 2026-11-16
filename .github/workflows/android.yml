@@ -45,6 +45,9 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
+      - name: Diagnose classpath
+        run: chmod +x gradlew && ./gradlew --no-daemon :app:dependencies --configuration releaseCompileClasspath | head -40
+
       - name: Build
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}

@@ -97,11 +97,7 @@ val prepareClips = tasks.register<PrepareClips>("prepareClips") {
     outDir.set(layout.buildDirectory.dir("generated/herman/res"))
 }
 
-androidComponents {
-    onVariants { variant ->
-        variant.sources.res?.addGeneratedSourceDirectory(prepareClips, PrepareClips::outDir)
-    }
-}
+android.sourceSets.getByName("main").res.srcDir(prepareClips.map { it.outDir })
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.06.01")
