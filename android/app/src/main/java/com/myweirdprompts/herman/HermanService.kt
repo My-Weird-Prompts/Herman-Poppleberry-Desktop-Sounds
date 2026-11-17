@@ -221,14 +221,14 @@ class HermanService : Service() {
     private fun startForegroundCompat() {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Herman is listening", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, "Announcer is listening", NotificationManager.IMPORTANCE_LOW)
         )
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Herman Announcer")
+            .setContentTitle("MWP Announcer")
             .setContentText("Listening for system events")
             .setContentIntent(open)
             .setOngoing(true)

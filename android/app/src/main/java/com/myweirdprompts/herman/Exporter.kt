@@ -7,48 +7,91 @@ import android.os.Environment
 import android.provider.MediaStore
 import java.io.File
 
-/** Copies every clip into MediaStore Notifications/Herman Poppleberry/ and Ringtones/. */
+/**
+ * Exports the selected voice into MediaStore Notifications/MWP Announcer/<Voice>/ and Ringtones/MWP Announcer/<Voice>/.
+ * Before exporting it deletes what this app exported earlier: v1.x files (folder "Herman Poppleberry", names "Herman - ...")
+ * and any earlier v2 export (folder "MWP Announcer"). Only files created by this app are removed.
+ */
 object Exporter {
-    private const val SUB = "Herman Poppleberry"
+    private const val ROOT = "MWP Announcer"
+    private const val OLD_ROOT = "Herman Poppleberry"
+    private val DIRS = listOf(Environment.DIRECTORY_NOTIFICATIONS, Environment.DIRECTORY_RINGTONES)
 
-    /** Returns (written, skippedExisting). */
-    fun exportAll(ctx: Context): Pair<Int, Int> {
-        val lines = Clips.load(ctx)
-        var written = 0; var skipped = 0
-        for ((id, line) in lines) {
-            val res = Clips.resId(ctx, id)
+    class Result(val written: Int, val removed: Int)
+
+    fun exportAll(ctx: Context, voice: Voice): Result {
+        val removed = removePrevious(ctx)
+        val lines = Clips.load(ctx, voice)
+        var written = 0
+        for (id in lines.keys) {
+            val res = Clips.resId(ctx, voice, id)
             if (res == 0) continue
-            val tv = android.util.TypedValue()
-            ctx.resources.getValue(res, tv, true)
-            val ogg = tv.string.toString().endsWith(".ogg")
-            val ext = if (ogg) "ogg" else "wav"
-            val mime = if (ogg) "audio/ogg" else "audio/x-wav"
-            val title = "Herman: " + id.replace('-', ' ').replaceFirstChar { it.uppercase() }
-            val name = "Herman - $id.$ext"
-            for (kind in listOf(Environment.DIRECTORY_NOTIFICATIONS, Environment.DIRECTORY_RINGTONES)) {
-                val ok = if (Build.VERSION.SDK_INT >= 29) save29(ctx, res, kind, name, title, mime, line)
-                else saveLegacy(ctx, res, kind, name, title, mime)
-                if (ok) written++ else skipped++
+            val title = voice.label + ": " + id.replace('-', ' ').replaceFirstChar { it.uppercase() }
+            val name = "${voice.label} - $id.ogg"
+            for (kind in DIRS) {
+                val ok = if (Build.VERSION.SDK_INT >= 29) save29(ctx, res, kind, voice, name, title)
+                else saveLegacy(ctx, res, kind, voice, name, title)
+                if (ok) written++
             }
         }
-        return written to skipped
+        return Result(written, removed)
     }
 
-    private fun save29(ctx: Context, res: Int, dir: String, name: String, title: String, mime: String, line: String): Boolean {
-        val rel = "$dir/$SUB/"
+    /** True when a file in [relPath] named [name] is one of ours: old "Herman - " names, or anything under the new root. */
+    private fun isOurs(relPath: String, name: String): Boolean {
+        val p = relPath.trimEnd('/')
+        val inOld = DIRS.any { p == "$it/$OLD_ROOT" } && name.startsWith("Herman - ")
+        val inNew = DIRS.any { p == "$it/$ROOT" || p.startsWith("$it/$ROOT/") }
+        return inOld || inNew
+    }
+
+    private fun removePrevious(ctx: Context): Int {
+        var n = 0
+        if (Build.VERSION.SDK_INT >= 29) {
+            val resolver = ctx.contentResolver
+            val coll = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val rows = ArrayList<Long>()
+            resolver.query(
+                coll,
+                arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.RELATIVE_PATH, MediaStore.Audio.Media.DISPLAY_NAME),
+                "${MediaStore.Audio.Media.OWNER_PACKAGE_NAME}=?", arrayOf(ctx.packageName), null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val rel = c.getString(1) ?: continue
+                    if (isOurs(rel, c.getString(2) ?: "")) rows += c.getLong(0)
+                }
+            }
+            for (id in rows) {
+                val uri = android.content.ContentUris.withAppendedId(coll, id)
+                n += runCatching { resolver.delete(uri, null, null) }.getOrDefault(0)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            for (kind in DIRS) {
+                val base = Environment.getExternalStoragePublicDirectory(kind)
+                File(base, OLD_ROOT).listFiles { f -> f.name.startsWith("Herman - ") }?.forEach { n += rmLegacy(ctx, it) }
+                File(base, ROOT).walkBottomUp().filter { it.isFile }.forEach { n += rmLegacy(ctx, it) }
+            }
+        }
+        return n
+    }
+
+    @Suppress("DEPRECATION")
+    private fun rmLegacy(ctx: Context, f: File): Int {
+        ctx.contentResolver.delete(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "${MediaStore.Audio.Media.DATA}=?", arrayOf(f.absolutePath))
+        return if (f.delete()) 1 else 0
+    }
+
+    private fun save29(ctx: Context, res: Int, dir: String, voice: Voice, name: String, title: String): Boolean {
+        val rel = "$dir/$ROOT/${voice.label}/"
         val resolver = ctx.contentResolver
         val coll = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        resolver.query(
-            coll, arrayOf(MediaStore.Audio.Media._ID),
-            "${MediaStore.Audio.Media.RELATIVE_PATH}=? AND ${MediaStore.Audio.Media.DISPLAY_NAME}=?",
-            arrayOf(rel, name), null
-        )?.use { if (it.moveToFirst()) return false }
         val cv = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, name)
             put(MediaStore.Audio.Media.TITLE, title)
-            put(MediaStore.Audio.Media.MIME_TYPE, mime)
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/ogg")
             put(MediaStore.Audio.Media.RELATIVE_PATH, rel)
-            put(MediaStore.Audio.Media.ARTIST, "Herman Poppleberry")
+            put(MediaStore.Audio.Media.ARTIST, voice.label)
             put(MediaStore.Audio.Media.IS_PENDING, 1)
             put(MediaStore.Audio.Media.IS_NOTIFICATION, if (dir == Environment.DIRECTORY_NOTIFICATIONS) 1 else 0)
             put(MediaStore.Audio.Media.IS_RINGTONE, if (dir == Environment.DIRECTORY_RINGTONES) 1 else 0)
@@ -63,15 +106,14 @@ object Exporter {
 
     /** API 26-28: write the file directly (needs WRITE_EXTERNAL_STORAGE), then index it. */
     @Suppress("DEPRECATION")
-    private fun saveLegacy(ctx: Context, res: Int, dir: String, name: String, title: String, mime: String): Boolean {
-        val folder = File(Environment.getExternalStoragePublicDirectory(dir), SUB).apply { mkdirs() }
+    private fun saveLegacy(ctx: Context, res: Int, dir: String, voice: Voice, name: String, title: String): Boolean {
+        val folder = File(File(Environment.getExternalStoragePublicDirectory(dir), ROOT), voice.label).apply { mkdirs() }
         val f = File(folder, name)
-        if (f.exists()) return false
         ctx.resources.openRawResource(res).use { i -> f.outputStream().use { i.copyTo(it) } }
         val cv = ContentValues().apply {
             put(MediaStore.Audio.Media.DATA, f.absolutePath)
             put(MediaStore.Audio.Media.TITLE, title)
-            put(MediaStore.Audio.Media.MIME_TYPE, mime)
+            put(MediaStore.Audio.Media.MIME_TYPE, "audio/ogg")
             put(MediaStore.Audio.Media.IS_NOTIFICATION, if (dir == Environment.DIRECTORY_NOTIFICATIONS) 1 else 0)
             put(MediaStore.Audio.Media.IS_RINGTONE, if (dir == Environment.DIRECTORY_RINGTONES) 1 else 0)
         }

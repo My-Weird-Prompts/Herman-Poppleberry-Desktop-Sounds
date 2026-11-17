@@ -29,7 +29,8 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun Screen(prefs: Prefs) {
-        val clips = remember { Clips.load(this) }
+        var voice by remember { mutableStateOf(prefs.voice) }
+        val clips = remember(voice) { Clips.load(this, voice) }
         var tab by remember { mutableIntStateOf(0) }
         val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
         LaunchedEffect(Unit) {
@@ -38,51 +39,59 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= 31) want += Manifest.permission.BLUETOOTH_CONNECT
             if (want.isNotEmpty()) perms.launch(want.toTypedArray())
         }
-        Scaffold(topBar = { TopAppBar(title = { Text("Herman Announcer") }) }) { pad ->
+        Scaffold(topBar = { TopAppBar(title = { Text("MWP Announcer") }) }) { pad ->
             Column(Modifier.padding(pad)) {
                 TabRow(selectedTabIndex = tab) {
                     Tab(tab == 0, { tab = 0 }, text = { Text("Events") })
                     Tab(tab == 1, { tab = 1 }, text = { Text("Soundboard") })
                 }
-                if (tab == 0) EventsTab(prefs, clips) else Soundboard(clips)
+                if (tab == 0) EventsTab(prefs, clips, voice) { voice = it; prefs.voice = it } else Soundboard(clips)
             }
         }
     }
 
     @Composable
-    fun EventsTab(prefs: Prefs, clips: Map<String, String>) {
+    fun EventsTab(prefs: Prefs, clips: Map<String, String>, voice: Voice, onVoice: (Voice) -> Unit) {
         var master by remember { mutableStateOf(prefs.master) }
         var ignore by remember { mutableStateOf(prefs.ignoreSilent) }
         val writePerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-            if (ok) export()
+            if (ok) export(voice)
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                SwitchRow("Herman is on", "Master switch. Off stops the background service.", master) {
+                Text("Voice", style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Voice.entries.forEach { v ->
+                        FilterChip(selected = v == voice, onClick = { onVoice(v) }, label = { Text(v.label) })
+                    }
+                }
+            }
+            item {
+                SwitchRow("Announcer is on", "Master switch. Off stops the background service.", master) {
                     master = it; prefs.master = it
                     if (it) HermanService.start(this@MainActivity) else HermanService.stop(this@MainActivity)
                 }
             }
             item {
-                SwitchRow("Ignore silent mode", "Play on the media stream so the ringer's silent mode does not mute Herman.", ignore) {
+                SwitchRow("Ignore silent mode", "Play on the media stream so the ringer's silent mode does not mute the announcer.", ignore) {
                     ignore = it; prefs.ignoreSilent = it
                 }
             }
             item {
                 Button(onClick = {
-                    if (Build.VERSION.SDK_INT < 29) writePerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) else export()
-                }, Modifier.fillMaxWidth()) { Text("Export as notification sounds") }
+                    if (Build.VERSION.SDK_INT < 29) writePerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) else export(voice)
+                }, Modifier.fillMaxWidth()) { Text("Export ${voice.label} as notification sounds") }
             }
             item { Text("Events", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
             items(Events.all, key = { it.key }) { ev -> EventRow(prefs, ev, clips) }
         }
     }
 
-    private fun export() {
+    private fun export(voice: Voice) {
         Thread {
             val msg = runCatching {
-                val (w, s) = Exporter.exportAll(this)
-                "Exported $w files ($s already present). Pick them in Settings > Sound."
+                val r = Exporter.exportAll(this, voice)
+                "Removed ${r.removed} old files, exported ${r.written}. Pick them in Settings > Sound."
             }.getOrElse { "Export failed: ${it.message}" }
             runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
         }.start()

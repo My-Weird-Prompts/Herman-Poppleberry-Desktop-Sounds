@@ -7,7 +7,7 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 
 /**
- * Plays one clip at a time. Default route is the notification stream (USAGE_NOTIFICATION), which
+ * Plays one clip at a time, in the voice selected in Prefs. Default route is the notification stream (USAGE_NOTIFICATION), which
  * the ringer's silent mode mutes. With [media] true it uses the media stream, which silent mode
  * does not mute.
  */
@@ -17,7 +17,7 @@ object Player {
     @Synchronized
     fun play(ctx: Context, clipId: String, media: Boolean) {
         val app = ctx.applicationContext
-        val res = Clips.resId(app, clipId)
+        val res = Clips.resId(app, Prefs(app).voice, clipId)
         if (res == 0) return
         current?.let { runCatching { it.release() } }
         val usage = if (media) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_NOTIFICATION

@@ -55,7 +55,8 @@ dependencies {
 }
 
 val prepareClips = tasks.register<PrepareClips>("prepareClips") {
-    clipsDir.set(rootProject.layout.projectDirectory.dir("../clips"))
+    voicesDir.set(rootProject.layout.projectDirectory.dir("../voices"))
+    repoRoot.set(rootProject.layout.projectDirectory.dir(".."))
     outDir.set(layout.buildDirectory.dir("generated/herman/res"))
 }
 

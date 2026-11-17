@@ -1,7 +1,7 @@
-# Herman Announcer (Android)
+# MWP Announcer (Android, formerly Herman Announcer)
 
 Phone companion to the Linux pack in this repo. Kotlin, Jetpack Compose (Material 3), `minSdk 26`, `targetSdk 36`,
-package `com.myweirdprompts.herman`, tier small (`android-v1.0`, `android-v1.1`, ...). Written 2026-11-17.
+package `com.myweirdprompts.herman`, tier small (`android-v1.0`, `android-v1.1`, `android-v2.0`, ...). Written 2026-11-17.
 
 ## Never build locally
 
@@ -11,16 +11,23 @@ The laptop has no usable Gradle setup and heavy jobs are barred there. All build
 
 ## Layout
 
-- `buildSrc/.../PrepareClips.kt` (wired in `app/build.gradle.kts`): task `prepareClips` copies `../clips/*.wav` (repo root) into generated raw resources
-  `clip_<id with - as _>.ogg`, converting with `ffmpeg -c:a libopus -b:a 32k` when ffmpeg is on PATH (CI installs it),
-  else the WAV is copied. It also copies `clips/clips.json` to `raw/clips_json.json`. The app reads that JSON at runtime,
-  so adding a clip to `clips/` needs no code change.
-- `Events.kt`: the event list and default clip per event (edit here to add an event or change a default).
+- `buildSrc/.../PrepareClips.kt` (wired in `app/build.gradle.kts`): task `prepareClips` copies `../voices/<voice>/*.ogg`
+  (repo root; already Ogg Opus, no ffmpeg) into generated raw resources `<voice>_<id with - as _>.ogg` (voices: herman,
+  corn, hilbert; 84 ids each) and writes `lines_<voice>.json` = root `lines.json` merged with `voices/<voice>/lines.json`
+  overrides. Adding a clip or voice folder needs no code change except listing a new voice in `Voice` (Events.kt).
+- `Events.kt`: the `Voice` enum, `Clips` loader, the event list and default clip per event (edit here to add an event or change a default).
 - `HermanService.kt`: foreground service (type `specialUse`), runtime receivers and network/audio callbacks, debounce
   (`DEBOUNCE_MS = 3000`). `BootReceiver.kt` starts it and plays `boot`.
-- `Player.kt`: MediaPlayer; `USAGE_NOTIFICATION` by default, `USAGE_MEDIA` when "Ignore silent mode" is on.
-- `Exporter.kt`: MediaStore export to `Notifications/Herman Poppleberry/` and `Ringtones/` (API 29+ via RELATIVE_PATH;
-  API 26-28 writes files directly and needs the storage permission).
+- `Prefs.kt`: settings incl. `voice`. A `schema` marker (2) clears saved `clip_*` choices from 1.x on first run, and `clip()`
+  falls back to the event default when a saved id does not exist in the selected voice.
+- `Player.kt`: plays in the voice from Prefs; MediaPlayer; `USAGE_NOTIFICATION` by default, `USAGE_MEDIA` when "Ignore silent mode" is on.
+- `Exporter.kt`: exports the selected voice to `Notifications/MWP Announcer/<Voice>/` and `Ringtones/MWP Announcer/<Voice>/`
+  as `<Voice> - <id>.ogg` (API 29+ via RELATIVE_PATH; API 26-28 writes files directly and needs the storage permission).
+  First it deletes the app's own earlier exports: MediaStore rows with `OWNER_PACKAGE_NAME` = our package whose path is
+  `Notifications|Ringtones/Herman Poppleberry` with names `Herman - *` (v1.x) or under `.../MWP Announcer/`. Files of other
+  apps and files left from before a reinstall (owner lost) are not touched; delete those by hand. Empty folders may remain.
+- The user-visible name is "MWP Announcer" (`strings.xml`); the package and applicationId stay `com.myweirdprompts.herman`
+  so updates over 1.x work. Settings: Events tab, top row "Voice" (Herman / Corn / Hilbert).
 
 ## Signing route
 
@@ -38,13 +45,21 @@ Own keystore per app, same pattern as Android-Roaming-Mic and the other apps:
 ## Release procedure
 
 ```bash
-git tag android-v1.1 && git push origin android-v1.1   # version name comes from the tag, versionCode from the run number
-gh run watch                                           # then: gh release view android-v1.1 --json assets
+git tag android-v2.0 && git push origin android-v2.0   # version name comes from the tag, versionCode from the run number
+gh run watch                                           # then: gh release view android-v2.0 --json assets
 ```
 
-The release carries `herman-announcer-<version>.apk`. Distribution is GitHub Releases only; this app is not in an
-F-Droid channel (the workflow has no F-Droid dispatch step). Pushes to `master` touching `android/` or `clips/` build an
-APK artifact without releasing.
+The release carries `mwp-announcer-<version>.apk`. Distribution: GitHub Releases and the public MWP F-Droid repo
+(`My-Weird-Prompts/fdroid`, `apps.yml` entry for this repo with `tag_prefix: android-v`); after a release run
+`gh workflow run publish.yml -R My-Weird-Prompts/fdroid`. Pushes to `master` touching `android/`, `voices/` or `lines.json`
+build an APK artifact without releasing.
+
+### Release notes
+
+- 2.0 (2026-11-17): breaking. Three voices (Herman, Corn, Hilbert) with a picker; 84 clips per voice incl. screen, network and
+  tailnet lines; app renamed MWP Announcer (package unchanged); export goes to `MWP Announcer/<Voice>/` and removes the
+  app's earlier exports; old clip prefs reset; ffmpeg dropped from CI; clips are the repo's Ogg Opus files unconverted.
+  versionCode is the CI run number, so it keeps rising over 1.x.
 
 ## Gotchas hit on 2026-11-17
 
@@ -53,6 +68,7 @@ APK artifact without releasing.
   all `androidx` imports were unresolved). Keep globs out of comments.
 - The clip task lives in `buildSrc` (not inline in the build script) and is wired with
   `androidComponents.onVariants { variant.sources.res?.addGeneratedSourceDirectory(...) }`.
+- `org.json` is not on the buildSrc classpath; PrepareClips uses Groovy's `JsonSlurper`/`JsonOutput`.
 - Maven Central can return HTTP 429 on a runner; re-run the job (`gh run rerun <id>`).
 - The default branch is `master`; the workflow triggers on `main` and `master`.
 

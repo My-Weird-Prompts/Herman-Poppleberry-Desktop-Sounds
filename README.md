@@ -184,14 +184,16 @@ Every voice says the same lines, except `login`, where each introduces himself
 | `network-slow` | The network is crawling. Something is hogging the bandwidth. |
 | `bluetooth-disconnected` | Bluetooth disconnected. |
 
-## Android: Herman Announcer
+## Android: MWP Announcer
 
-Phone companion to this pack (added 2026-11-17). Package `com.myweirdprompts.herman`, source in [`android/`](android/).
+Phone companion to this pack (added 2026-11-17; v2.0 the same day adds the three voices Herman, Corn and Hilbert,
+renamed from Herman Announcer). Package `com.myweirdprompts.herman`, source in [`android/`](android/).
 It runs a low-importance foreground service and speaks the clips on system events.
 
-**Install:** download `herman-announcer-<version>.apk` from the
-[Releases](https://github.com/My-Weird-Prompts/Herman-Poppleberry-Desktop-Sounds/releases) entry tagged `android-v*` and
-open it (allow installs from your browser or file manager). On first launch allow notifications and Bluetooth.
+**Install:** download `mwp-announcer-<version>.apk` from the
+[Releases](https://github.com/My-Weird-Prompts/MWP-Announcer/releases) entry tagged `android-v*` and
+open it (allow installs from your browser or file manager), or add the MWP F-Droid repo
+(`myweirdprompts.com/fdroid`) and install "MWP Announcer" there. Upgrading from Herman Announcer 1.x keeps the same package. On first launch allow notifications and Bluetooth.
 
 **What triggers what** (each event can be switched off or given another clip in the app; a 3 second debounce applies per event):
 
@@ -212,15 +214,17 @@ open it (allow installs from your browser or file manager). On first launch allo
 | airplane mode on / off | `secure-mode-on` / `secure-mode-off` |
 | Do Not Disturb on / off | `mic-muted` / `mic-live` |
 
-Herman plays on the notification stream, so the ringer's silent mode mutes him; the "Ignore silent mode" switch moves
-him to the media stream. The Soundboard tab plays any clip.
+Pick the voice (Herman, Corn or Hilbert) at the top of the Events tab; events and the Soundboard use it. The announcer plays on
+the notification stream, so the ringer's silent mode mutes it; "Ignore silent mode" moves it to the media stream. The
+Soundboard tab plays every clip of the selected voice.
 
-**Export as notification sounds:** the button copies all clips into `Notifications/Herman Poppleberry/` and
-`Ringtones/` (MediaStore), so they appear in Settings > Sound and in per-app notification sound pickers. Re-running skips
-files already exported.
+**Export as notification sounds:** the button copies the selected voice into `Notifications/MWP Announcer/<Voice>/` and
+`Ringtones/MWP Announcer/<Voice>/` (MediaStore), so they appear in Settings > Sound. Before exporting it deletes what the
+app exported earlier (v1.x `Herman Poppleberry` folders and earlier `MWP Announcer` exports), so only the new clips remain.
 
-Clips are not duplicated in the app source: the build copies `clips/*.wav` (converted to Ogg/Opus in CI), so a
-re-rendered clip needs only a new `android-v*` tag. Build, signing and release: [`android/README.md`](android/README.md).
+Clips are not duplicated in the app source: the build copies `voices/<voice>/*.ogg` as they are and merges `lines.json`
+with each voice's overrides, so a re-rendered clip needs only a new `android-v*` tag. Build, signing and release:
+[`android/README.md`](android/README.md).
 
 ## How they were made
 
