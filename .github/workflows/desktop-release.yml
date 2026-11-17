@@ -1,0 +1,54 @@
+name: Desktop release (deb + sound themes)
+
+# Tag `v*` (glob matches from the start of the tag, so `android-v*` does not trigger this) builds
+# dist/mwp-announcer_<version>_all.deb and one tarball per sound theme, attaches them to a GitHub
+# release, then tells My-Weird-Prompts/MWP-APT to republish the APT repo.
+# Dispatch needs secret MWP_APT_DISPATCH_TOKEN (fine-grained PAT, repo My-Weird-Prompts/MWP-APT,
+# Contents: read and write). Without it the step is skipped; publish by hand:
+#   gh workflow run publish.yml -R My-Weird-Prompts/MWP-APT
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg (libvorbis)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libvorbis
+
+      - name: Build deb and themes
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          scripts/build_deb.sh "$ver"
+          scripts/build_themes.sh
+          for v in herman corn hilbert; do
+            tar -C dist/themes -czf "dist/mwp-$v.tar.gz" "mwp-$v"
+          done
+          ls -l dist/*.deb dist/*.tar.gz
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" \
+            --notes "Desktop package mwp-announcer $ver (all architectures) and sound themes for the KDE Store. APT: https://cdn.myweirdprompts.com/apt/" \
+            "dist/mwp-announcer_${ver}_all.deb" dist/mwp-herman.tar.gz dist/mwp-corn.tar.gz dist/mwp-hilbert.tar.gz
+
+      - name: Publish APT repo
+        env:
+          TOKEN: ${{ secrets.MWP_APT_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "MWP_APT_DISPATCH_TOKEN not set; run: gh workflow run publish.yml -R My-Weird-Prompts/MWP-APT"; exit 0; fi
+          curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/My-Weird-Prompts/MWP-APT/dispatches -d '{"event_type":"publish"}'
