@@ -4,7 +4,7 @@ Desktop system sounds and spoken announcements in the voice of **Herman Popplebe
 [My Weird Prompts](https://myweirdprompts.com) podcast. Boot, shutdown, suspend, screen lock, mic mute, VPN,
 battery, device and error events, all announced by Herman, dramatically.
 
-Contents: 46 WAV clips (24 kHz mono 16-bit, loudness-normalised to -16 LUFS), a freedesktop sound theme
+Contents: 46 WAV clips (44.1 kHz mono 16-bit, loudness-normalised to -16 LUFS), a freedesktop sound theme
 (`herman-poppleberry`, Ogg Vorbis), an event watcher for what the theme can't cover, and `herman-say`, a CLI
 to play any clip.
 
@@ -160,9 +160,14 @@ re-rendered clip needs only a new `android-v*` tag. Build, signing and release: 
 ## How they were made
 
 Rendered on 2026-11-17 with the My Weird Prompts Chatterbox voice-clone TTS (the podcast's production `tts_worker`
-on Modal, Herman's reference voice and per-character EQ), then loudness-normalised with ffmpeg
+on Modal, Herman's reference voice and per-character EQ), then given a resemble-enhance bandwidth-extension pass (restores the top octave above about 7.5 kHz; v1.1, 2026-11-17) and loudness-normalised with ffmpeg
 `loudnorm=I=-16:TP=-1.5`. Re-render or add a clip: add it to `clips/clips.json`, then run the private MWP
-cast-TTS tooling (`render_cast.py --voice herman --file clips/clips.json --out clips`). Existing WAVs are skipped.
+cast-TTS tooling (`render_cast.py --voice herman --file clips/clips.json --out <raw_dir>`), run the enhancement pass
+(MWP monorepo `planning/research/tts-landscape-2026-11/pilot-5-herman-lora-2026-11-14/scripts/bwe_modal.py::files
+--src <raw_dir> --dst <enh_dir>`, Modal profile `myweirdprompts`; the first run builds the image and can take over
+20 minutes), then `ffmpeg -i <enh>.wav -af loudnorm=I=-16:TP=-1.5 -ac 1 -ar 44100 -c:a pcm_s16le clips/<id>.wav`.
+Once the OmniVoice Herman adapter set `v3` is live in the MWP pipeline, it has the enhancement built in and the pass
+can be dropped (not live as of 2026-11-17).
 
 ## Licence
 
