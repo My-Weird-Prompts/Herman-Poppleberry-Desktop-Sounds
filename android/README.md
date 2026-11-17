@@ -46,6 +46,16 @@ The release carries `herman-announcer-<version>.apk`. Distribution is GitHub Rel
 F-Droid channel (the workflow has no F-Droid dispatch step). Pushes to `master` touching `android/` or `clips/` build an
 APK artifact without releasing.
 
+## Gotchas hit on 2026-11-17
+
+- Kotlin block comments nest: a KDoc containing a glob such as `clips/` followed by `*.wav` opens a second comment, swallows
+  the rest of the file and gives baffling symptoms (in a `.gradle.kts`: the `dependencies {}` block silently vanished, so
+  all `androidx` imports were unresolved). Keep globs out of comments.
+- The clip task lives in `buildSrc` (not inline in the build script) and is wired with
+  `androidComponents.onVariants { variant.sources.res?.addGeneratedSourceDirectory(...) }`.
+- Maven Central can return HTTP 429 on a runner; re-run the job (`gh run rerun <id>`).
+- The default branch is `master`; the workflow triggers on `main` and `master`.
+
 ## Verification status
 
 See the bottom of this file; update it after on-device testing.
