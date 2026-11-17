@@ -82,3 +82,11 @@ See the bottom of this file; update it after on-device testing.
   DND, export and picking the sounds in Settings.
 - Notes: when the ringer is silent or DND is on, the notification stream is muted, so `sound-muted` is inaudible unless
   "Ignore silent mode" is on. Vendor battery optimisation can kill the service; exempt the app if events stop.
+
+### Status at release (2026-11-17)
+
+- Verified: CI build green on `android-v2.0` (run 44111026304), release `android-v2.0` carries signed `mwp-announcer-2.0.apk`
+  (versionCode 17); the public MWP F-Droid index-v2.json lists `com.myweirdprompts.herman` "MWP Announcer" at 2.0 (code 17,
+  next to 1.1) and the APK URL returns HTTP 200.
+- Untested on a device: voice picker, per-voice soundboard, export cleanup of real 1.x files (the MediaStore owner query
+  and deletes), the 1.x to 2.0 prefs reset, and all items listed above.
