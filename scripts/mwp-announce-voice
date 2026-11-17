@@ -1,0 +1,12 @@
+#!/bin/sh
+# mwp-announce-voice [herman|corn|hilbert]: pick the voice for mwp-say, the watcher and the desktop sound theme.
+# No argument: print the current voice.
+cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/mwp-announcer"; cfg="$cfg_dir/config"
+if [ -z "$1" ]; then sed -n 's/^VOICE=//p' "$cfg" 2>/dev/null | tail -1 | grep . || echo herman; exit 0; fi
+case "$1" in herman|corn|hilbert) ;; *) echo "voices: herman corn hilbert" >&2; exit 1 ;; esac
+mkdir -p "$cfg_dir"; touch "$cfg"
+grep -v '^VOICE=' "$cfg" > "$cfg.tmp"; echo "VOICE=$1" >> "$cfg.tmp"; mv "$cfg.tmp" "$cfg"
+command -v kwriteconfig6 >/dev/null && kwriteconfig6 --file kdeglobals --group Sounds --key Theme "mwp-$1"
+command -v gsettings >/dev/null && gsettings set org.gnome.desktop.sound theme-name "mwp-$1" 2>/dev/null
+systemctl --user try-restart mwp-announce-watch.service 2>/dev/null
+echo "voice: $1"

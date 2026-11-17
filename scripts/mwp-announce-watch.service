@@ -1,0 +1,14 @@
+[Unit]
+Description=My Weird Prompts desktop announcements (Herman, Corn or Hilbert)
+After=graphical-session.target pipewire.service pipewire-pulse.service
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/env mwp-announce-watch
+ExecStop=/usr/bin/env mwp-announce-farewell
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,5 @@
+#!/bin/sh
+# ExecStop of mwp-announce-watch.service: "shutdown" when the system is going down, else "logout".
+case "$(systemctl is-system-running 2>/dev/null)" in stopping) c=shutdown ;; *) c=logout ;; esac
+timeout 8 mwp-say "$c"
+exit 0

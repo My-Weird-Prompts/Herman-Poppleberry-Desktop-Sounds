@@ -1,6 +1,0 @@
-#!/bin/sh
-# ExecStop of herman-watch.service: "shutdown" when the system is going down, else "logout".
-case "$(systemctl is-system-running 2>/dev/null)" in stopping) c=shutdown ;; *) c=logout ;; esac
-f="${HERMAN_CLIPS:-$HOME/.local/share/herman-poppleberry/clips}/$c.wav"
-[ -f "$f" ] && timeout 8 paplay "$f"
-exit 0

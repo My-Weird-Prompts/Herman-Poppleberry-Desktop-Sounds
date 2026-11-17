@@ -1,0 +1,21 @@
+#!/bin/sh
+# mwp-say [--voice herman|corn|hilbert] <clip-id> | --list | --voices
+# Play one My Weird Prompts announcement clip, e.g. `mwp-say screen-1-on`, `mwp-say --voice corn boot`.
+# Voice: --voice, else $MWP_VOICE, else VOICE= in ~/.config/mwp-announcer/config, else herman.
+# Clips: $MWP_ANNOUNCER_DATA, else ~/.local/share/mwp-announcer, else /usr/share/mwp-announcer (voices/<voice>/<id>.ogg).
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/mwp-announcer/config"
+voice="${MWP_VOICE:-}"
+[ -z "$voice" ] && [ -f "$cfg" ] && voice="$(sed -n 's/^VOICE=//p' "$cfg" | tail -1)"
+if [ "$1" = "--voice" ]; then voice="$2"; shift 2; fi
+voice="${voice:-herman}"
+for d in "${MWP_ANNOUNCER_DATA:-}" "$HOME/.local/share/mwp-announcer" /usr/share/mwp-announcer; do
+  [ -n "$d" ] && [ -d "$d/voices" ] && { data="$d"; break; }
+done
+[ -z "$data" ] && { echo "mwp-say: no clips installed" >&2; exit 1; }
+case "$1" in
+  ""|--list) ls "$data/voices/$voice" | sed -n 's/\.ogg$//p'; exit 0 ;;
+  --voices) ls "$data/voices"; exit 0 ;;
+esac
+f="$data/voices/$voice/$1.ogg"
+[ -f "$f" ] || { echo "mwp-say: no clip '$1' for voice '$voice' (mwp-say --list)" >&2; exit 1; }
+if command -v paplay >/dev/null; then exec paplay "$f"; else exec pw-play "$f"; fi

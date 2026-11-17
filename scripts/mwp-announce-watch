@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""My Weird Prompts announcement watcher: plays clips (via mwp-say) on events the sound theme can't cover.
+
+Session:  boot (machine up < 5 min) or login at start; suspend/resume (logind PrepareForSleep); screen lock/unlock
+          (org.freedesktop.ScreenSaver ActiveChanged); default mic mute/unmute (pactl subscribe).
+Screens:  screen-<n>-on/off or screen-left/center/right-on/off when a monitor is switched on or off, polled from
+          kscreen-doctor (KDE), wlr-randr (wlroots, e.g. labwc on a Pi) or /sys/class/drm. All at once: screens-all-*.
+Network:  ethernet/wifi up/down, VPN/WireGuard up/down and captive portal (nmcli monitor); internet-down/-restored and
+          dns-failure/-restored (own TCP + DNS probe); tailnet up/down and exit node on/off (tailscale status);
+          home server down/up (ping HOME_SERVER); public IP change (opt-in); weak Wi-Fi; new remote login (who).
+Shutdown/logout are played by the unit's ExecStop (mwp-announce-farewell).
+
+Config ~/.config/mwp-announcer/config, KEY=VALUE lines (environment MWP_<KEY> overrides):
+  VOICE=herman              herman | corn | hilbert (mwp-announce-voice sets it)
+  MUTE=mic-live,mic-muted   clip ids never played by the watcher
+  SCREENS=DP-1,DP-2,HDMI-A-1  output names in screen order, left to right. Default: ordered by position when first seen
+  SCREEN_CLIPS=number       number (screen-1-on) | position (screen-left-on; up to three screens)
+  HOME_SERVER=10.0.0.2      host to ping every 30 s; empty = off
+  PUBLIC_IP_CHECK=off       on = fetch https://api.ipify.org every 10 min and announce a change
+  WIFI_WEAK=30              signal % below which wifi-weak plays (at most every 15 min); 0 = off
+  PROBE_HOST=1.1.1.1        TCP 443 target for the internet check; DNS check resolves PROBE_NAME (myweirdprompts.com)
+"""
+import json
+import os
+import shutil
+import socket
+import subprocess
+import threading
+import time
+import urllib.request
+from pathlib import Path
+
+CFG_FILE = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "mwp-announcer/config"
+STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "mwp-announcer"
+
+
+def load_cfg() -> dict:
+    cfg = {"MUTE": "", "SCREENS": "", "SCREEN_CLIPS": "number", "HOME_SERVER": "", "PUBLIC_IP_CHECK": "off",
+           "WIFI_WEAK": "30", "PROBE_HOST": "1.1.1.1", "PROBE_NAME": "myweirdprompts.com"}
+    if CFG_FILE.exists():
+        for ln in CFG_FILE.read_text().splitlines():
+            if "=" in ln and not ln.lstrip().startswith("#"):
+                k, v = ln.split("=", 1)
+                cfg[k.strip()] = v.strip()
+    for k in list(cfg):
+        cfg[k] = os.environ.get(f"MWP_{k}", cfg[k])
+    return cfg
+
+
+CFG = load_cfg()
+MUTED = {m.strip() for m in CFG["MUTE"].split(",") if m.strip()}
+_last: dict[str, float] = {}
+_lock = threading.Lock()
+
+
+def say(clip: str, debounce: float = 3.0) -> None:
+    now = time.monotonic()
+    with _lock:
+        if clip in MUTED or now - _last.get(clip, -1e9) < debounce:
+            return
+        _last[clip] = now
+    print("say", clip, flush=True)
+    subprocess.Popen(["mwp-say", clip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def run(cmd, timeout=10) -> str:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def lines(cmd):
+    while True:
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            yield from p.stdout
+        except FileNotFoundError:
+            return
+        time.sleep(5)  # restart the monitor if it dies
+
+
+def every(seconds, fn):
+    while True:
+        try:
+            fn()
+        except Exception as e:  # a failed probe must not kill the thread
+            print("probe error", fn.__name__, e, flush=True)
+        time.sleep(seconds)
+
+
+# ---------- session ----------
+
+def watch_sleep():
+    expect = False
+    for ln in lines(["dbus-monitor", "--system",
+                     "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'"]):
+        if "member=PrepareForSleep" in ln:
+            expect = True
+        elif expect and "boolean" in ln:
+            expect = False
+            if "true" in ln:
+                say("suspend")
+            else:
+                time.sleep(2)  # let audio come back
+                say("resume")
+
+
+def watch_lock():
+    expect = False
+    for ln in lines(["dbus-monitor", "--session",
+                     "type='signal',interface='org.freedesktop.ScreenSaver',member='ActiveChanged'"]):
+        if "member=ActiveChanged" in ln:
+            expect = True
+        elif expect and "boolean" in ln:
+            expect = False
+            say("screen-locked" if "true" in ln else "screen-unlocked")
+
+
+def mic_muted():
+    out = run(["pactl", "get-source-mute", "@DEFAULT_SOURCE@"])
+    return ("yes" in out) if out else None
+
+
+def watch_mic():
+    state = mic_muted()
+    for ln in lines(["pactl", "subscribe"]):
+        if "on source" in ln and "change" in ln or "on server" in ln:
+            now = mic_muted()
+            if now is not None and state is not None and now != state:
+                say("mic-muted" if now else "mic-live", debounce=1.0)
+            state = now
+
+
+def boot_greeting():
+    try:
+        uptime = float(Path("/proc/uptime").read_text().split()[0])
+    except OSError:
+        return
+    time.sleep(4)
+    say("boot" if uptime < 300 else "login")
+
+
+# ---------- screens ----------
+
+def outputs() -> dict[str, tuple[bool, int]] | None:
+    """{output name: (on, x position)}; None if no backend answers."""
+    if shutil.which("kscreen-doctor"):
+        out = run(["kscreen-doctor", "-j"])
+        if out.strip().startswith("{"):
+            res = {}
+            for o in json.loads(out).get("outputs", []):
+                res[o["name"]] = (bool(o.get("connected") and o.get("enabled")), int((o.get("pos") or {}).get("x", 0)))
+            return res
+    if shutil.which("wlr-randr"):
+        out = run(["wlr-randr", "--json"])
+        if out.strip().startswith("["):
+            return {o["name"]: (bool(o.get("enabled")), int((o.get("position") or {}).get("x", 0)))
+                    for o in json.loads(out)}
+    res = {}
+    for st in Path("/sys/class/drm").glob("card*-*/status"):
+        name = st.parent.name.split("-", 1)[1]
+        if name.startswith("Writeback"):
+            continue
+        en = st.parent / "enabled"
+        on = st.read_text().strip() == "connected" and (not en.exists() or en.read_text().strip() == "enabled")
+        res[name] = (on, 0)
+    return res or None
+
+
+def screen_order(seen: dict) -> list[str]:
+    if CFG["SCREENS"]:
+        return [s.strip() for s in CFG["SCREENS"].split(",") if s.strip()]
+    f = STATE / "screens.json"
+    order = json.loads(f.read_text()) if f.exists() else []
+    new = sorted((n for n in seen if n not in order and seen[n][0]), key=lambda n: (seen[n][1], n))
+    if new:
+        order += new
+        STATE.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(order))
+    return order
+
+
+def screen_clip(name: str, order: list[str], on: bool) -> str | None:
+    if name not in order:
+        return None
+    i = order.index(name)
+    if CFG["SCREEN_CLIPS"] == "position" and len(order) <= 3:
+        pos = {1: ["center"], 2: ["left", "right"], 3: ["left", "center", "right"]}[len(order)][i]
+        return f"screen-{pos}-{'on' if on else 'off'}"
+    return f"screen-{i + 1}-{'on' if on else 'off'}" if i < 4 else None
+
+
+def watch_screens():
+    prev = outputs()
+    if prev is None:
+        return
+    screen_order(prev)
+    while True:
+        time.sleep(2)
+        cur = outputs()
+        if cur is None:
+            continue
+        order = screen_order(cur)
+        known = [n for n in order]
+        changed = {n: cur.get(n, (False, 0))[0] for n in known if cur.get(n, (False, 0))[0] != prev.get(n, (False, 0))[0]}
+        if changed:
+            states = [cur.get(n, (False, 0))[0] for n in known]
+            if len(known) > 1 and len(changed) == len(known) and len(set(changed.values())) == 1:
+                say("screens-all-on" if all(states) else "screens-all-off")
+            else:
+                for n, on in changed.items():
+                    c = screen_clip(n, order, on)
+                    if c:
+                        say(c, debounce=1.0)
+        prev = cur
+
+
+# ---------- network ----------
+
+def watch_nm():
+    """nmcli monitor: device and VPN state, NetworkManager's own connectivity verdict (captive portal)."""
+    for ln in lines(["nmcli", "monitor"]):
+        low = ln.strip().lower()
+        if "connectivity is now" in low:
+            if "'portal'" in low:
+                say("captive-portal", debounce=60)
+            continue
+        if ":" not in low:
+            continue
+        dev, _, state = low.partition(":")
+        state = state.strip()
+        if "vpn" in low or "wireguard" in low or dev.startswith(("wg", "tun")):
+            if state == "connected" or "vpn connection" in low and "activated" in low:
+                say("vpn-connected")
+            elif state.startswith("disconnected") or "deactivated" in low:
+                say("vpn-disconnected")
+        elif dev.startswith(("en", "eth")):
+            if state == "connected":
+                say("ethernet-connected")
+            elif state == "unavailable" or state.startswith("disconnected"):
+                say("ethernet-disconnected")
+        elif dev.startswith("wl"):
+            if state == "connected":
+                say("wifi-connected")
+            elif state.startswith("disconnected"):
+                say("wifi-disconnected")
+
+
+class Flip:
+    """A boolean that only counts as changed after `need` consecutive readings (stops one lost packet announcing)."""
+
+    def __init__(self, need=2):
+        self.state, self.pending, self.n, self.need = None, None, 0, need
+
+    def update(self, v):
+        if self.state is None:
+            self.state = v
+            return None
+        if v == self.state:
+            self.pending, self.n = None, 0
+            return None
+        self.n = self.n + 1 if v == self.pending else 1
+        self.pending = v
+        if self.n >= self.need:
+            self.state, self.pending, self.n = v, None, 0
+            return v
+        return None
+
+
+_net, _dns = Flip(), Flip()
+
+
+def probe_internet():
+    try:
+        socket.create_connection((CFG["PROBE_HOST"], 443), timeout=4).close()
+        up = True
+    except OSError:
+        up = False
+    ch = _net.update(up)
+    if ch is not None:
+        say("internet-restored" if ch else "internet-down")
+    if up:
+        try:
+            socket.getaddrinfo(CFG["PROBE_NAME"], 443)
+            ok = True
+        except OSError:
+            ok = False
+        ch = _dns.update(ok)
+        if ch is not None:
+            say("dns-restored" if ch else "dns-failure")
+
+
+_ts, _exit = Flip(1), Flip(1)
+
+
+def probe_tailscale():
+    out = run(["tailscale", "status", "--json"])
+    if not out.strip().startswith("{"):
+        return
+    st = json.loads(out)
+    ch = _ts.update(st.get("BackendState") == "Running")
+    if ch is not None:
+        say("tailnet-connected" if ch else "tailnet-disconnected")
+    ch = _exit.update(bool(st.get("ExitNodeStatus")))
+    if ch is not None:
+        say("exit-node-on" if ch else "exit-node-off")
+
+
+_home = Flip()
+
+
+def probe_home():
+    ok = subprocess.run(["ping", "-c1", "-W2", CFG["HOME_SERVER"]], capture_output=True).returncode == 0
+    ch = _home.update(ok)
+    if ch is not None:
+        say("home-server-up" if ch else "home-server-down")
+
+
+_ip = {"v": None}
+
+
+def probe_public_ip():
+    try:
+        ip = urllib.request.urlopen("https://api.ipify.org", timeout=8).read().decode().strip()
+    except OSError:
+        return
+    if _ip["v"] and ip != _ip["v"]:
+        say("public-ip-changed")
+    _ip["v"] = ip
+
+
+def probe_wifi():
+    out = run(["nmcli", "-t", "-f", "IN-USE,SIGNAL", "dev", "wifi", "list", "--rescan", "no"])
+    for ln in out.splitlines():
+        if ln.startswith("*:"):
+            try:
+                if int(ln.split(":")[1]) < int(CFG["WIFI_WEAK"]):
+                    say("wifi-weak", debounce=900)
+            except ValueError:
+                pass
+
+
+_who = {"v": None}
+
+
+def probe_logins():
+    remote = {ln for ln in run(["who"]).splitlines() if "(" in ln and "tmux" not in ln and ":" not in ln.split("(")[-1][:2]}
+    if _who["v"] is not None and remote - _who["v"]:
+        say("ssh-login", debounce=30)
+    _who["v"] = remote
+
+
+def main():
+    threads = [watch_sleep, watch_lock, watch_mic, watch_screens, watch_nm,
+               lambda: every(30, probe_internet), lambda: every(60, probe_logins)]
+    if shutil.which("tailscale"):
+        threads.append(lambda: every(15, probe_tailscale))
+    if CFG["HOME_SERVER"]:
+        threads.append(lambda: every(30, probe_home))
+    if CFG["PUBLIC_IP_CHECK"] == "on":
+        threads.append(lambda: every(600, probe_public_ip))
+    if CFG["WIFI_WEAK"] not in ("", "0"):
+        threads.append(lambda: every(120, probe_wifi))
+    for fn in threads:
+        threading.Thread(target=fn, daemon=True).start()
+    boot_greeting()
+    while True:
+        time.sleep(3600)
+
+
+if __name__ == "__main__":
+    main()

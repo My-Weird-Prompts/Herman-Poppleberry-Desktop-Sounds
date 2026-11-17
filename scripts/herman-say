@@ -1,6 +1,0 @@
-#!/bin/sh
-# herman-say <clip-id> | --list : play one Herman Poppleberry clip (e.g. herman-say secure-mode-on)
-D="${HERMAN_CLIPS:-$HOME/.local/share/herman-poppleberry/clips}"
-[ "$1" = "--list" ] || [ -z "$1" ] && { ls "$D" | sed -n 's/\.wav$//p'; exit 0; }
-[ -f "$D/$1.wav" ] || { echo "no clip '$1' (herman-say --list)" >&2; exit 1; }
-exec paplay "$D/$1.wav"
