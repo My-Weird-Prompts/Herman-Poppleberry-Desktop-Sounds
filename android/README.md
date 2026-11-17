@@ -90,3 +90,14 @@ See the bottom of this file; update it after on-device testing.
   next to 1.1) and the APK URL returns HTTP 200.
 - Untested on a device: voice picker, per-voice soundboard, export cleanup of real 1.x files (the MediaStore owner query
   and deletes), the 1.x to 2.0 prefs reset, and all items listed above.
+
+## 2.1 (2026-11-17): Bluetooth on/off and a permissions card
+
+Daniel reported Bluetooth being turned off went unannounced on 2.0. Cause: the app had no such event at all; it only
+listened for A2DP *connected*. Not a permission problem, and "display over other apps" (SYSTEM_ALERT_WINDOW) would not
+have helped: broadcasts need no overlay. Fix: `BluetoothAdapter.ACTION_STATE_CHANGED` → `bluetooth-on` / `bluetooth-off`
+(no runtime permission on API 31+; manifest `BLUETOOTH` with maxSdk 30 for older), A2DP `STATE_DISCONNECTED` →
+`bluetooth-disconnected`. New clips `bluetooth-on`/`bluetooth-off` rendered in all three voices.
+Permissions card (Events tab): notifications, Nearby devices (BLUETOOTH_CONNECT), unrestricted battery
+(`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, opens the system dialog), each with state re-read on resume, plus "Open app
+settings". Untested on a device as of 2026-11-17.

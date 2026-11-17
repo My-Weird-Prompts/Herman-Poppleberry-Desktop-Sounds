@@ -183,6 +183,8 @@ Every voice says the same lines, except `login`, where each introduces himself
 | `new-device-on-network` | Unknown device on the network. Who invited them? |
 | `network-slow` | The network is crawling. Something is hogging the bandwidth. |
 | `bluetooth-disconnected` | Bluetooth disconnected. |
+| `bluetooth-on` | Bluetooth on. Scanning the airwaves. |
+| `bluetooth-off` | Bluetooth off. Radio silence. |
 
 ## Android: MWP Announcer
 
@@ -193,7 +195,7 @@ It runs a low-importance foreground service and speaks the clips on system event
 **Install:** download `mwp-announcer-<version>.apk` from the
 [Releases](https://github.com/My-Weird-Prompts/MWP-Announcer/releases) entry tagged `android-v*` and
 open it (allow installs from your browser or file manager), or add the MWP F-Droid repo
-(`myweirdprompts.com/fdroid`) and install "MWP Announcer" there. Upgrading from Herman Announcer 1.x keeps the same package. On first launch allow notifications and Bluetooth.
+(`myweirdprompts.com/fdroid`) and install "MWP Announcer" there. Upgrading from Herman Announcer 1.x keeps the same package. On first launch allow notifications and Bluetooth. The Permissions card on the Events tab shows what is granted and has Allow buttons, including "Unrestricted battery" (battery-optimisation exemption) so Android does not stop the service; 2.1, 2026-11-17.
 
 **What triggers what** (each event can be switched off or given another clip in the app; a 3 second debounce applies per event):
 
@@ -207,7 +209,8 @@ open it (allow installs from your browser or file manager), or add the MWP F-Dro
 | battery at or below 5%, not charging | `battery-critical` |
 | battery full while charging | `battery-full` |
 | wired or USB headset plugged / unplugged | `headset-connected` / `headset-disconnected` |
-| Bluetooth audio (A2DP) connected | `bluetooth-connected` |
+| Bluetooth turned on / off (adapter state, no runtime permission on Android 12+) | `bluetooth-on` / `bluetooth-off` |
+| Bluetooth audio (A2DP) connected / disconnected (needs Nearby devices) | `bluetooth-connected` / `bluetooth-disconnected` |
 | default network available / lost | `network-connected` / `network-lost` |
 | VPN up / down | `vpn-connected` / `vpn-disconnected` |
 | ringer silent / normal | `sound-muted` / `sound-restored` |

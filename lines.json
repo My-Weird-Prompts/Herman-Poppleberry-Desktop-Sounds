@@ -82,5 +82,7 @@
  "ssh-login": "New remote login. Someone has entered the building.",
  "new-device-on-network": "Unknown device on the network. Who invited them?",
  "network-slow": "The network is crawling. Something is hogging the bandwidth.",
- "bluetooth-disconnected": "Bluetooth disconnected."
+ "bluetooth-disconnected": "Bluetooth disconnected.",
+ "bluetooth-on": "Bluetooth on. Scanning the airwaves.",
+ "bluetooth-off": "Bluetooth off. Radio silence."
 }

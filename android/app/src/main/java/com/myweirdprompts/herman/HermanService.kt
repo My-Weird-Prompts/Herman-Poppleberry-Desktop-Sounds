@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -134,10 +135,19 @@ class HermanService : Service() {
             fire(if (off) "dnd-off" else "dnd-on")
         }
 
-        // Bluetooth A2DP connected (needs BLUETOOTH_CONNECT on Android 12+; silently idle without it).
+        // Bluetooth radio on/off. No runtime permission on Android 12+; BLUETOOTH (manifest, maxSdk 30) below that.
+        receiver(IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)) {
+            when (it.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)) {
+                BluetoothAdapter.STATE_ON -> fire("bluetooth-on")
+                BluetoothAdapter.STATE_OFF -> fire("bluetooth-off")
+            }
+        }
+
+        // Bluetooth A2DP connected/disconnected (needs BLUETOOTH_CONNECT on Android 12+; silently idle without it).
         receiver(IntentFilter(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)) {
-            if (it.getIntExtra(BluetoothProfile.EXTRA_STATE, -1) == BluetoothProfile.STATE_CONNECTED) {
-                fire("bluetooth-connected")
+            when (it.getIntExtra(BluetoothProfile.EXTRA_STATE, -1)) {
+                BluetoothProfile.STATE_CONNECTED -> fire("bluetooth-connected")
+                BluetoothProfile.STATE_DISCONNECTED -> fire("bluetooth-disconnected")
             }
         }
 

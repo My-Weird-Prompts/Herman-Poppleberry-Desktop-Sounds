@@ -1,6 +1,11 @@
 package com.myweirdprompts.herman
 
 import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -19,6 +24,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
+    /** Bumped in onResume so the permissions panel re-reads state after the user comes back from Settings. */
+    private val resumed = mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        resumed.intValue++
+    }
+
+    private fun granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
+
+    private fun batteryExempt() = (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+
+    private fun openAppSettings() = startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
@@ -66,6 +86,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            item { PermissionsPanel() }
             item {
                 SwitchRow("Announcer is on", "Master switch. Off stops the background service.", master) {
                     master = it; prefs.master = it
@@ -84,6 +105,40 @@ class MainActivity : ComponentActivity() {
             }
             item { Text("Events", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
             items(Events.all, key = { it.key }) { ev -> EventRow(prefs, ev, clips) }
+        }
+    }
+
+    /** What the announcer needs, each with its state and a button to fix it. */
+    @Composable
+    fun PermissionsPanel() {
+        @Suppress("UNUSED_VARIABLE") val tick = resumed.intValue  // recompose on resume
+        val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { resumed.intValue++ }
+        val rows = buildList {
+            if (Build.VERSION.SDK_INT >= 33) add(Triple("Notifications", "Keeps the background service alive and visible.",
+                granted(Manifest.permission.POST_NOTIFICATIONS) to { ask.launch(Manifest.permission.POST_NOTIFICATIONS) }))
+            if (Build.VERSION.SDK_INT >= 31) add(Triple("Nearby devices (Bluetooth)", "Bluetooth audio connected and disconnected.",
+                granted(Manifest.permission.BLUETOOTH_CONNECT) to { ask.launch(Manifest.permission.BLUETOOTH_CONNECT) }))
+            add(Triple("Unrestricted battery", "Stops Android from killing the announcer in the background.",
+                batteryExempt() to {
+                    @Suppress("BatteryLife")
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                }))
+        }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Permissions", style = MaterialTheme.typography.titleMedium)
+                rows.forEach { (title, why, st) ->
+                    val (ok, fix) = st
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text((if (ok) "✓ " else "✗ ") + title, style = MaterialTheme.typography.titleSmall)
+                            Text(why, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (!ok) TextButton(onClick = fix) { Text("Allow") }
+                    }
+                }
+                TextButton(onClick = { openAppSettings() }) { Text("Open app settings") }
+            }
         }
     }
 
