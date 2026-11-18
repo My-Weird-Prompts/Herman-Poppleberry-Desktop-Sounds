@@ -9,7 +9,7 @@ rm -rf "$pkg"; mkdir -p "$pkg/DEBIAN" "$pkg/usr/share/mwp-announcer" "$pkg/usr/s
 cp -r "$root/voices" "$root/lines.json" "$pkg/usr/share/mwp-announcer/"
 "$root/scripts/build_themes.sh" "$pkg/usr/share/sounds" >/dev/null
 for s in mwp-say mwp-announce-watch mwp-announce-farewell mwp-announce-voice; do install -m 755 "$root/scripts/$s" "$pkg/usr/bin/"; done
-install -m 644 "$root/scripts/mwp-announce-watch.service" "$pkg/usr/lib/systemd/user/"
+install -m 644 "$root/scripts/mwp-announce-watch.service" "$root/scripts/mwp-announce-watch-headless.service" "$pkg/usr/lib/systemd/user/"
 cp "$root/README.md" "$pkg/usr/share/doc/mwp-announcer/"
 size=$(du -sk "$pkg/usr" | cut -f1)
 cat > "$pkg/DEBIAN/control" <<CTL
@@ -18,8 +18,8 @@ Version: $ver
 Architecture: all
 Maintainer: My Weird Prompts <show@myweirdprompts.com>
 Installed-Size: $size
-Depends: python3, pulseaudio-utils | pipewire-bin
-Recommends: dbus-bin | dbus, network-manager, iputils-ping
+Depends: python3, pulseaudio-utils | pipewire-bin | alsa-utils
+Recommends: dbus-bin | dbus, network-manager, iputils-ping, opus-tools
 Section: sound
 Priority: optional
 Homepage: https://github.com/My-Weird-Prompts/MWP-Announcer
@@ -35,6 +35,8 @@ set -e
 if [ "$1" = configure ]; then
   echo "mwp-announcer: per user, run  mwp-announce-voice herman  (or corn, hilbert)"
   echo "               and  systemctl --user enable --now mwp-announce-watch.service"
+  echo "  headless (server, Raspberry Pi, SBC): loginctl enable-linger, then"
+  echo "               systemctl --user enable --now mwp-announce-watch-headless.service"
 fi
 PI
 chmod 755 "$pkg/DEBIAN/postinst"

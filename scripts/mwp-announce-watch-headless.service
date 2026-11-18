@@ -1,0 +1,16 @@
+[Unit]
+Description=My Weird Prompts announcements, headless (servers, Raspberry Pis and other SBCs)
+# Starts with the user manager, not a graphical session. Needs lingering (loginctl enable-linger) to run without a login.
+After=default.target pipewire.service pipewire-pulse.service
+Conflicts=mwp-announce-watch.service
+
+[Service]
+ExecStart=/usr/bin/env mwp-announce-watch
+ExecStop=/usr/bin/env mwp-announce-farewell
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

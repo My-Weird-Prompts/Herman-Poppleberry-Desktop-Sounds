@@ -27,6 +27,35 @@ systemctl --user enable --now mwp-announce-watch.service
 
 Needs `paplay` (PulseAudio or PipeWire-Pulse) or `pw-play`, and python3 for the watcher.
 
+## Headless machines: servers, Raspberry Pis and other SBCs (since v2.2, 2026-11-18)
+
+No desktop session needed. `mwp-say` plays through PipeWire or PulseAudio when their socket is up, else straight to
+ALSA (`opusdec | aplay`, `ffmpeg | aplay` or `mpv`; install `opus-tools` and `alsa-utils` on a bare Armbian/Debian).
+Use the headless unit, which starts with the user manager instead of `graphical-session.target` (under labwc on
+Raspberry Pi OS that target never activates, so the desktop unit never starts there):
+
+```bash
+sudo apt install mwp-announcer opus-tools          # or ./install.sh herman --headless from a checkout
+loginctl enable-linger "$USER"                      # run from boot without a login
+echo 'ALSA_DEVICE=plughw:CARD=AUDIO' >> ~/.config/mwp-announcer/config   # only on raw ALSA; `aplay -l` lists cards
+systemctl --user enable mwp-announce-watch-headless.service             # --now plays "boot"/"login" immediately
+```
+
+Without PipeWire, `pactl` and `dbus-monitor --session` aren't there, so the mic and lock events stay silent. The network,
+tailnet, internet and home-server probes still work. A user with no seat session must be in the `audio` group to open
+`/dev/snd`; without it PipeWire only shows "Dummy Output", and clips "play" without any sound.
+
+### Volume cap
+
+`VOLUME=` in the config (or `MWP_VOLUME`) is a gain from 0.0 to 1.0 applied to the clip. It defaults to **0.3 on raw ALSA**,
+where no mixer limits it: a USB speaker at 100% was deafening on 2026-11-18. Through PipeWire/PulseAudio it defaults to 1.0,
+because the desktop volume governs there. Values above 1.0 are clamped.
+
+**For agents:** never start the watcher or run `mwp-say` on a machine that drives a room speaker without asking first.
+Starting the watcher plays a clip. Check the device and mixer level first (`amixer -c <card>`, `wpctl get-volume`) and
+test at `MWP_VOLUME=0.1`. To check a route without making a sound, decode to a file instead:
+`opusdec --quiet <clip>.ogg /tmp/x.wav`.
+
 ## Voice and config
 
 `mwp-announce-voice corn` writes `VOICE=corn` to `~/.config/mwp-announcer/config`, selects the `mwp-corn` sound theme
@@ -40,6 +69,8 @@ that file (environment `MWP_<KEY>` overrides; full list in the header of `script
 | `SCREEN_CLIPS` | `number` | `number` (screen-1-on ... screen-4-on) or `position` (screen-left/center/right-on; up to three screens) |
 | `HOME_SERVER` | empty | host pinged every 30 s for home-server-down/-up |
 | `PUBLIC_IP_CHECK` | `off` | `on` = ask api.ipify.org every 10 min, announce a change |
+| `VOLUME` | 1.0 (0.3 on raw ALSA) | clip gain 0.0-1.0, a hard cap |
+| `ALSA_DEVICE` | ALSA default | headless only: e.g. `plughw:CARD=AUDIO` |
 | `WIFI_WEAK` | `30` | signal % for wifi-weak (at most every 15 min); `0` = off |
 
 ```bash

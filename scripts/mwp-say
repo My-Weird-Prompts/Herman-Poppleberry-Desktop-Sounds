@@ -3,6 +3,12 @@
 # Play one My Weird Prompts announcement clip, e.g. `mwp-say screen-1-on`, `mwp-say --voice corn boot`.
 # Voice: --voice, else $MWP_VOICE, else VOICE= in ~/.config/mwp-announcer/config, else herman.
 # Clips: $MWP_ANNOUNCER_DATA, else ~/.local/share/mwp-announcer, else /usr/share/mwp-announcer (voices/<voice>/<id>.ogg).
+# Output: PipeWire (pw-play) or PulseAudio (paplay) when their socket is up, else plain ALSA for headless machines and
+# SBCs: opusdec | aplay, ffmpeg | aplay, or mpv. ALSA device: $MWP_ALSA_DEVICE, else ALSA_DEVICE= in the config
+# (e.g. plughw:CARD=AUDIO; `aplay -l` lists cards), else ALSA's default.
+# Volume cap: $MWP_VOLUME, else VOLUME= in the config, a gain from 0.0 to 1.0 applied to the clip itself. Default 1.0
+# through PipeWire/PulseAudio (the desktop mixer still governs), 0.3 on raw ALSA, where nothing else limits it and a
+# USB speaker at 100% is deafening (2026-11-18). Values above 1.0 are clamped to 1.0.
 cfg="${XDG_CONFIG_HOME:-$HOME/.config}/mwp-announcer/config"
 voice="${MWP_VOICE:-}"
 [ -z "$voice" ] && [ -f "$cfg" ] && voice="$(sed -n 's/^VOICE=//p' "$cfg" | tail -1)"
@@ -18,4 +24,20 @@ case "$1" in
 esac
 f="$data/voices/$voice/$1.ogg"
 [ -f "$f" ] || { echo "mwp-say: no clip '$1' for voice '$voice' (mwp-say --list)" >&2; exit 1; }
-if command -v paplay >/dev/null; then exec paplay "$f"; else exec pw-play "$f"; fi
+vol="${MWP_VOLUME:-}"
+[ -z "$vol" ] && [ -f "$cfg" ] && vol="$(sed -n 's/^VOLUME=//p' "$cfg" | tail -1)"
+cap() { awk -v v="${vol:-$1}" 'BEGIN { v += 0; if (v > 1) v = 1; if (v < 0) v = 0; printf "%.3f", v }'; }
+rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -S "$rt/pipewire-0" ] && command -v pw-play >/dev/null; then exec pw-play --volume="$(cap 1)" "$f"; fi
+if [ -S "$rt/pulse/native" ] && command -v paplay >/dev/null; then
+  exec paplay --volume="$(awk -v v="$(cap 1)" 'BEGIN { printf "%d", v * 65536 }')" "$f"; fi
+v="$(cap 0.3)"
+dev="${MWP_ALSA_DEVICE:-}"
+[ -z "$dev" ] && [ -f "$cfg" ] && dev="$(sed -n 's/^ALSA_DEVICE=//p' "$cfg" | tail -1)"
+if command -v aplay >/dev/null; then
+  if command -v opusdec >/dev/null; then opusdec --quiet --gain "$(awk -v v="$v" 'BEGIN { print (v > 0) ? 20 * log(v) / log(10) : -60 }')" "$f" - | aplay -q ${dev:+-D "$dev"}; exit $?; fi
+  if command -v ffmpeg >/dev/null; then ffmpeg -loglevel error -i "$f" -af "volume=$v" -f wav - | aplay -q ${dev:+-D "$dev"}; exit $?; fi
+fi
+if command -v mpv >/dev/null; then exec mpv --really-quiet --no-video --ao=alsa --volume="$(awk -v v="$v" 'BEGIN { printf "%d", v * 100 }')" ${dev:+--audio-device="alsa/$dev"} "$f"; fi
+echo "mwp-say: nothing to play with: no PipeWire/PulseAudio session, and no aplay with opusdec (opus-tools) or ffmpeg, or mpv" >&2
+exit 1

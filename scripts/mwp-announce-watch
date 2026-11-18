@@ -12,6 +12,8 @@ Shutdown/logout are played by the unit's ExecStop (mwp-announce-farewell).
 
 Config ~/.config/mwp-announcer/config, KEY=VALUE lines (environment MWP_<KEY> overrides):
   VOICE=herman              herman | corn | hilbert (mwp-announce-voice sets it)
+  VOLUME=0.3                clip gain cap 0.0-1.0 (mwp-say; default 1.0, 0.3 on raw ALSA)
+  ALSA_DEVICE=plughw:CARD=AUDIO  raw ALSA output when there is no PipeWire/PulseAudio (mwp-say)
   MUTE=mic-live,mic-muted   clip ids never played by the watcher
   SCREENS=DP-1,DP-2,HDMI-A-1  output names in screen order, left to right. Default: ordered by position when first seen
   SCREEN_CLIPS=number       number (screen-1-on) | position (screen-left-on; up to three screens)
